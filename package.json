@@ -7,6 +7,9 @@
   "author": "Pig Fang <g-plane@hotmail.com>",
   "license": "MIT",
   "private": false,
+  "files": [
+    "index.js"
+  ],
   "devDependencies": {
     "@types/acorn": "^4.0.3",
     "acorn": "^6.0.4",
