@@ -1,0 +1,8 @@
+extends: gplane
+
+env:
+  commonjs: true
+
+rules:
+  no-case-declarations: 0
+  default-case: 2

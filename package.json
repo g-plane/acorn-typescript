@@ -1,0 +1,20 @@
+{
+  "name": "acorn-typescript",
+  "version": "0.0.0",
+  "description": "Acorn plugin for parsing TypeScript.",
+  "main": "index.js",
+  "repository": "https://github.com/g-plane/acorn-typescript",
+  "author": "Pig Fang <g-plane@hotmail.com>",
+  "license": "MIT",
+  "private": false,
+  "devDependencies": {
+    "@types/acorn": "^4.0.3",
+    "acorn": "^6.0.4",
+    "eslint": "^5.9.0",
+    "eslint-config-gplane": "^3.6.0",
+    "eslint-formatter-beauty": "^3.0.0"
+  },
+  "peerDependencies": {
+    "acorn": "^6.0.4"
+  }
+}
