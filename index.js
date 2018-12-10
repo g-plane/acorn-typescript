@@ -22,6 +22,12 @@ const tsDeclaration = {
   declare: 8
 }
 
+const tsTypeOperator = {
+  typeof: 1,
+  keyof: 2,
+  infer: 4
+}
+
 module.exports = Parser => class TSParser extends Parser {
   computeLocByOffset(offset) {
     // If `locations` option is off, do nothing for saving performance.
@@ -101,36 +107,11 @@ module.exports = Parser => class TSParser extends Parser {
   }
 
   _parseTSType() {
-    let node
-    switch (this.type) {
-      case tt._new:
-        node = this.parseTSConstructorType()
-        break
-      default:
-        node = this._parseSimpleType()
-        break
-    }
-    if (
-      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
-    ) {
-      const typeParameters = this.parseTSTypeParameterInstantiation()
-      node.typeParameters = typeParameters
-      node.end = typeParameters.end
-      if (this.options.locations) {
-        node.loc.end = typeParameters.loc.end
-      }
-    }
-    if (this.type === tt.bitwiseAND) {
-      node = this.parseTSIntersectionType(node)
-    }
-    if (this.type === tt.bitwiseOR) {
-      node = this.parseTSUnionType(node)
-    }
+    let node = this._parseNonTSConditionalType()
     if (this.type === tt._extends) {
       node = this.parseTSConditionalType(node)
     }
-
-    return node || this.unexpected()
+    return node
   }
 
   _parseTSTypeAnnotation(node) {
@@ -178,6 +159,44 @@ module.exports = Parser => class TSParser extends Parser {
     return node
   }
 
+  _parseNonTSConditionalType() {
+    let node
+    switch (this.type) {
+      case tt._new:
+        node = this.parseTSConstructorType()
+        break
+      case tt.name:
+        switch (tsTypeOperator[this.value]) {
+          case tsTypeOperator.infer:
+            node = this.parseTSInferType()
+            break
+          default:
+            node = this._parseSimpleType()
+        }
+        break
+      default:
+        node = this._parseSimpleType()
+        break
+    }
+    if (
+      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
+    ) {
+      const typeParameters = this.parseTSTypeParameterInstantiation()
+      node.typeParameters = typeParameters
+      node.end = typeParameters.end
+      if (this.options.locations) {
+        node.loc.end = typeParameters.loc.end
+      }
+    }
+    if (this.type === tt.bitwiseAND) {
+      node = this.parseTSIntersectionType(node)
+    }
+    if (this.type === tt.bitwiseOR) {
+      node = this.parseTSUnionType(node)
+    }
+    return node || this.unexpected()
+  }
+
   _parseTSDeclaration(node, expr) {
     const val = tsDeclaration[expr.name]
     switch (val) {
@@ -200,6 +219,11 @@ module.exports = Parser => class TSParser extends Parser {
   parseTSTypeReference() {
     const node = this.startNode()
     node.typeName = this.parseIdent()
+    if (
+      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
+    ) {
+      node.typeParameters = this.parseTSTypeParameterInstantiation()
+    }
     this.finishNode(node, 'TSTypeReference')
     return node
   }
@@ -340,22 +364,19 @@ module.exports = Parser => class TSParser extends Parser {
     const node = this.startNodeAtNode(checkType)
     node.checkType = checkType
     this.expect(tt._extends)
-    node.extendsType = this._parseTSUnionTypeOrHigher()
+    node.extendsType = this._parseNonTSConditionalType()
     this.expect(tt.question)
-    node.trueType = this._parseTSUnionTypeOrHigher()
+    node.trueType = this._parseNonTSConditionalType()
     this.expect(tt.colon)
-    node.falseType = this._parseTSUnionTypeOrHigher()
+    node.falseType = this._parseNonTSConditionalType()
     return this.finishNode(node, 'TSConditionalType')
   }
 
   parseTSInferType() {
     const node = this.startNode()
-    if (this.value === 'infer' && this.type === tt.name) {
-      node.typeParameter = this.parseTSTypeParameter()
-      return this.finishNode(node, 'TSInferType')
-    } else {
-      this.unexpected()
-    }
+    this.next()
+    node.typeParameter = this.parseTSTypeParameter()
+    return this.finishNode(node, 'TSInferType')
   }
 
   parseTSImportType(isTypeOf) {
