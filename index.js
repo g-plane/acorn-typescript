@@ -101,7 +101,15 @@ module.exports = Parser => class TSParser extends Parser {
   }
 
   _parseTSType() {
-    let node = this._parseSimpleType()
+    let node
+    switch (this.type) {
+      case tt._new:
+        node = this.parseTSConstructorType()
+        break
+      default:
+        node = this._parseSimpleType()
+        break
+    }
     if (
       this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
     ) {
@@ -130,32 +138,44 @@ module.exports = Parser => class TSParser extends Parser {
   }
 
   _parseSimpleType() {
+    let node
     switch (this.type) {
       case tt.name:
-        return this.value in tsTypeKeyword
+        node = this.value in tsTypeKeyword
           ? this.parseTSTypeKeyword()
           : this.parseTSTypeReference()
+        break
       case tt.braceL:
-        return this.parseTSTypeLiteral()
+        node = this.parseTSTypeLiteral()
+        break
       case tt._void:
       case tt._null:
-        return this.parseTSTypeKeyword()
+        node = this.parseTSTypeKeyword()
+        break
       case tt.parenL:
-        return this.parseTSParenthesizedType()
+        node = this.parseTSParenthesizedType()
+        break
       case tt.bracketL:
-        return this.parseTSTupleType()
+        node = this.parseTSTupleType()
+        break
       case tt.num:
       case tt.string:
       case tt._true:
       case tt._false:
-        return this.parseTSLiteralType(this.type)
-      case tt._new:
-        return this.parseTSConstructorType()
-      case tt._import:
-        return this.parseTSImportType(false)
-      default:
+        node = this.parseTSLiteralType(this.type)
         break
+      case tt._import:
+        node = this.parseTSImportType(false)
+        break
+      default:
+        return
     }
+
+    if (this.type === tt.bracketL) {
+      node = this._parseMaybeTSArrayType(node)
+    }
+
+    return node
   }
 
   _parseTSDeclaration(node, expr) {
@@ -255,6 +275,27 @@ module.exports = Parser => class TSParser extends Parser {
     this.expect(tt.ellipsis)
     this._parseTSTypeAnnotation(node)
     return this.finishNode(node, 'TSRestType')
+  }
+
+  _parseMaybeTSArrayType(prev) {
+    const node = this.startNodeAtNode(prev)
+    this.expect(tt.bracketL)
+    if (this.eat(tt.bracketR)) {
+      return this.parseTSArrayType(node, prev)
+    }
+    return this.parseTSIndexedAccessType(node, prev)
+  }
+
+  parseTSArrayType(node, elementType) {
+    node.elementType = elementType
+    return this.finishNode(node, 'TSArrayType')
+  }
+
+  parseTSIndexedAccessType(node, objectType) {
+    node.objectType = objectType
+    node.indexType = this._parseTSType()
+    this.expect(tt.bracketR)
+    return this.finishNode(node, 'TSIndexedAccessType')
   }
 
   parseTSParenthesizedType() {
