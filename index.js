@@ -218,7 +218,11 @@ module.exports = Parser => class TSParser extends Parser {
 
   parseTSTypeReference() {
     const node = this.startNode()
-    node.typeName = this.parseIdent()
+    let typeName = this.parseIdent()
+    if (this.type === tt.dot) {
+      typeName = this.parseTSQualifiedName(typeName)
+    }
+    node.typeName = typeName
     if (
       this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
     ) {
