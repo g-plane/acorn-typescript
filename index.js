@@ -215,20 +215,8 @@ module.exports = Parser => class TSParser extends Parser {
   parseTSLiteralType(tokType) {
     const node = this.startNode()
     const literal = this.parseLiteral(this.value)
-    switch (tokType) {
-      case tt._true:
-      case tt._false:
-        literal.value = tokType === tt._true
-        literal.type = 'BooleanLiteral'
-        break
-      case tt.num:
-        literal.type = 'NumericLiteral'
-        break
-      case tt.string:
-        literal.type = 'StringLiteral'
-        break
-      default:
-        this.unexpected()
+    if (tokType === tt._true || tokType === tt._false) {
+      literal.value = tokType === tt._true
     }
     node.literal = literal
     return this.finishNode(node, 'TSLiteralType')
