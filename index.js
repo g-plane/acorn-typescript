@@ -362,13 +362,13 @@ module.exports = Parser => class TSParser extends Parser {
   }
 
   _isStartOfTSFunctionType() {
-    this.next()
+    this.nextToken()
     switch (this.type) {
       case tt.parenR:
       case tt.ellipsis:
         return true
       case tt.name:
-        this.next()
+        this.nextToken()
         switch (this.type) {
           case tt.colon:
           case tt.comma:
@@ -376,7 +376,7 @@ module.exports = Parser => class TSParser extends Parser {
           case tt.eq:
             return true
           case tt.parenR:
-            this.next()
+            this.nextToken()
             return this.type === tt.arrow
           default:
             return this.unexpected()
