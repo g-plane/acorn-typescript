@@ -181,12 +181,12 @@ module.exports = Parser => class TSParser extends Parser {
   _parseTSDeclaration(node, expr) {
     const val = tsDeclaration[expr.name]
     switch (val) {
-      case val & tsDeclaration.interface:
+      case tsDeclaration.interface:
         if (this.type === tt.name) {
           return this.parseTSInterfaceDeclaration()
         }
         break
-      case val & tsDeclaration.type:
+      case tsDeclaration.type:
         if (this.type === tt.name) {
           return this.parseTSTypeAliasDeclaration()
         }
