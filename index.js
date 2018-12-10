@@ -40,6 +40,29 @@ module.exports = Parser => class TSParser extends Parser {
     return this.startNodeAt(node.start, this.computeLocByOffset(node.start))
   }
 
+  tsPreparePreview() {
+    const {
+      pos, curLine, type, value, end, start, endLoc, startLoc, scopeStack,
+      lastTokStartLoc, lastTokEndLoc, lastTokEnd, lastTokStart, context,
+    } = this
+    return () => {
+      this.pos = pos
+      this.curLine = curLine
+      this.type = type
+      this.value = value
+      this.end = end
+      this.start = start
+      this.endLoc = endLoc
+      this.startLoc = startLoc
+      this.scopeStack = scopeStack
+      this.lastTokStartLoc = lastTokStartLoc
+      this.lastTokEndLoc = lastTokEndLoc
+      this.lastTokEnd = lastTokEnd
+      this.lastTokStart = lastTokStart
+      this.context = context
+    }
+  }
+
   // Studied from Babel
   parseExpressionStatement(node, expr) {
     return expr.type === 'Identifier'
@@ -57,6 +80,25 @@ module.exports = Parser => class TSParser extends Parser {
       }
     }
     return node
+  }
+
+  parseMaybeDefault(startPos, startLoc, left) {
+    if (!left) {
+      left = this.parseBindingAtom()
+      if (this.eat(tt.question)) {
+        left.optional = true
+      }
+      // `parseBindingAtom` is executed,
+      // so we need to check type annotation again.
+      if (this.eat(tt.colon)) {
+        left.typeAnnotation = this.parseTSTypeAnnotation()
+        left.end = left.typeAnnotation.end
+        if (this.options.locations) {
+          left.loc.end = left.typeAnnotation.loc.end
+        }
+      }
+    }
+    return super.parseMaybeDefault(startPos, startLoc, left)
   }
 
   parseFunctionBody(node, isArrowFunction) {
@@ -134,7 +176,12 @@ module.exports = Parser => class TSParser extends Parser {
         node = this.parseTSTypeKeyword()
         break
       case tt.parenL:
-        node = this.parseTSParenthesizedType()
+        const recover = this.tsPreparePreview()
+        const isStartOfTSFunctionType = this._isStartOfTSFunctionType()
+        recover()
+        node = isStartOfTSFunctionType
+          ? this.parseTSFunctionType()
+          : this.parseTSParenthesizedType()
         break
       case tt.bracketL:
         node = this.parseTSTupleType()
@@ -312,6 +359,41 @@ module.exports = Parser => class TSParser extends Parser {
     node.indexType = this._parseTSType()
     this.expect(tt.bracketR)
     return this.finishNode(node, 'TSIndexedAccessType')
+  }
+
+  _isStartOfTSFunctionType() {
+    this.next()
+    switch (this.type) {
+      case tt.parenR:
+      case tt.ellipsis:
+        return true
+      case tt.name:
+        this.next()
+        switch (this.type) {
+          case tt.colon:
+          case tt.comma:
+          case tt.question:
+          case tt.eq:
+            return true
+          case tt.parenR:
+            this.next()
+            return this.type === tt.arrow
+          default:
+            return this.unexpected()
+        }
+      default:
+        return false
+    }
+  }
+
+  parseTSFunctionType() {
+    const node = this.startNode()
+    const temp = Object.create(null)
+    this.parseFunctionParams(temp)
+    node.parameters = temp.params
+    this.expect(tt.arrow)
+    node.typeAnnotation = this.parseTSTypeAnnotation()
+    return this.finishNode(node, 'TSFunctionType')
   }
 
   parseTSParenthesizedType() {
