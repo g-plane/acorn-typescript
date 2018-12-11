@@ -670,6 +670,7 @@ module.exports = Parser => class TSParser extends Parser {
             case tt.semi:
             case tt.comma:
             case tt.braceR:
+            case tt.question:
               list.push(this.parseTSPropertySignature(key))
               break
             default:
@@ -678,6 +679,34 @@ module.exports = Parser => class TSParser extends Parser {
                 continue
               }
               this.unexpected()
+          }
+          break
+        case tt.bracketL:
+          const recover = this.tsPreparePreview()
+          this.nextToken()
+          if (this.type === tt.name) {
+            this.nextToken()
+            switch (this.type) {
+              case tt.colon:
+                recover()
+                list.push(this.parseTSIndexSignature())
+                break
+              case tt._in:
+                if (list.length === 0) {
+                  recover()
+                  return this.parseTSMappedType()
+                } else {
+                  recover()
+                  list.push(this.parseTSPropertySignature(null, true))
+                }
+                break
+              default:
+                recover()
+                list.push(this.parseTSPropertySignature(null, true))
+            }
+          } else {
+            recover()
+            list.push(this.parseTSPropertySignature(null, true))
           }
           break
         case tt._new:
@@ -711,9 +740,18 @@ module.exports = Parser => class TSParser extends Parser {
     return this.finishNode(node, 'TSMethodSignature')
   }
 
-  parseTSPropertySignature(key) {
-    const node = this.startNodeAtNode(key)
-    node.key = key
+  parseTSPropertySignature(key, computed = false) {
+    let node
+    if (computed) {
+      node = this.startNode()
+      this.expect(tt.bracketL)
+      node.key = this.parseExpression()
+      this.expect(tt.bracketR)
+    } else {
+      node = this.startNodeAtNode(key)
+      node.key = key
+    }
+    node.computed = computed
     if (this.eat(tt.question)) {
       node.optional = true
     }
@@ -722,5 +760,50 @@ module.exports = Parser => class TSParser extends Parser {
     }
     this.eat(tt.comma) || this.eat(tt.semi)
     return this.finishNode(node, 'TSPropertySignature')
+  }
+
+  parseTSIndexSignature() {
+    const node = this.startNode()
+    this.expect(tt.bracketL)
+    const index = this.parseIdent()
+    index.typeAnnotation = this.parseTSTypeAnnotation(true)
+    index.end = index.typeAnnotation.end
+    if (this.options.locations) {
+      index.loc.end = index.typeAnnotation.loc.end
+    }
+    node.index = index
+    this.expect(tt.bracketR)
+    node.typeAnnotation = this.parseTSTypeAnnotation(true)
+    this.eat(tt.comma) || this.eat(tt.semi)
+    return this.finishNode(node, 'TSIndexSignature')
+  }
+
+  parseTSMappedType() {
+    const node = this.startNodeAt(this.lastTokStart, this.lastTokStartLoc)
+    this.expect(tt.bracketL)
+    node.typeParameter = this._parseTSTypeParameterInTSMappedType()
+    this.expect(tt.bracketR)
+    if (this.eat(tt.question)) {
+      node.optional = true
+    }
+    if (this.type === tt.colon) {
+      node.typeAnnotation = this.parseTSTypeAnnotation(true)
+    }
+    this.semicolon()
+    this.expect(tt.braceR)
+    return this.finishNode(node, 'TSMappedType')
+  }
+
+  _parseTSTypeParameterInTSMappedType() {
+    const node = this.startNode()
+    if (this.type === tt.name) {
+      node.name = this.value
+      this.next()
+    } else {
+      this.unexpected()
+    }
+    this.expect(tt._in)
+    node.constraint = this._parseNonConditionalType()
+    return this.finishNode(node, 'TSTypeParameter')
   }
 }
