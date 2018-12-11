@@ -86,7 +86,7 @@ module.exports = Parser => class TSParser extends Parser {
   parseBindingAtom() {
     const node = super.parseBindingAtom()
     if (this.eat(tt.colon)) {
-      node.typeAnnotation = this.parseTSTypeAnnotation()
+      node.typeAnnotation = this.parseTSTypeAnnotation(false)
       node.end = node.typeAnnotation.end
       if (this.options.locations) {
         node.loc.end = node.typeAnnotation.loc.end
@@ -104,7 +104,7 @@ module.exports = Parser => class TSParser extends Parser {
       // `parseBindingAtom` is executed,
       // so we need to check type annotation again.
       if (this.eat(tt.colon)) {
-        left.typeAnnotation = this.parseTSTypeAnnotation()
+        left.typeAnnotation = this.parseTSTypeAnnotation(false)
         left.end = left.typeAnnotation.end
         if (this.options.locations) {
           left.loc.end = left.typeAnnotation.loc.end
@@ -118,7 +118,7 @@ module.exports = Parser => class TSParser extends Parser {
     // I know, return type doesn't belong to function body,
     // but this will be less hacky.
     if (this.eat(tt.colon)) {
-      node.returnType = this.parseTSTypeAnnotation()
+      node.returnType = this.parseTSTypeAnnotation(false)
     }
     super.parseFunctionBody(node, isArrowFunction)
   }
@@ -534,7 +534,7 @@ module.exports = Parser => class TSParser extends Parser {
       this.options.ecmaVersion >= 8
     )
     this.expect(tt.arrow)
-    node.typeAnnotation = this.parseTSTypeAnnotation()
+    node.typeAnnotation = this.parseTSTypeAnnotation(false)
     return this.finishNode(node, 'TSConstructorType')
   }
 
@@ -549,7 +549,7 @@ module.exports = Parser => class TSParser extends Parser {
       this.options.ecmaVersion >= 8
     )
     if (this.eat(tt.colon)) {
-      node.typeAnnotation = this.parseTSTypeAnnotation()
+      node.typeAnnotation = this.parseTSTypeAnnotation(false)
     }
     return this.finishNode(node, 'TSConstructSignatureDeclaration')
   }
@@ -705,7 +705,7 @@ module.exports = Parser => class TSParser extends Parser {
       this.options.ecmaVersion >= 8
     )
     if (this.type === tt.colon) {
-      node.typeAnnotation = this.parseTSTypeAnnotation()
+      node.typeAnnotation = this.parseTSTypeAnnotation(true)
     }
     this.eat(tt.comma) || this.eat(tt.semi)
     return this.finishNode(node, 'TSMethodSignature')
@@ -718,7 +718,7 @@ module.exports = Parser => class TSParser extends Parser {
       node.optional = true
     }
     if (this.type === tt.colon) {
-      node.typeAnnotation = this.parseTSTypeAnnotation()
+      node.typeAnnotation = this.parseTSTypeAnnotation(true)
     }
     this.eat(tt.comma) || this.eat(tt.semi)
     return this.finishNode(node, 'TSPropertySignature')
