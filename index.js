@@ -238,8 +238,10 @@ module.exports = Parser => class TSParser extends Parser {
           ? this.parseTSFunctionType()
           : this.parseTSParenthesizedType()
         break
-      case this._isStartOfTypeParameters(): /* < */
-        node = this.parseTSFunctionType()
+      case tt.relational:
+        node = this._isStartOfTypeParameters()
+          ? this.parseTSFunctionType()
+          : this.unexpected()
         break
       default:
         node = this._parseTSUnionTypeOrIntersectionType()
