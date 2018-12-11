@@ -377,7 +377,7 @@ module.exports = Parser => class TSParser extends Parser {
             this.nextToken()
             return this.type === tt.arrow
           default:
-            return this.unexpected()
+            return false
         }
       default:
         return false
