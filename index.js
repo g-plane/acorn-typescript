@@ -372,12 +372,28 @@ module.exports = Parser => class TSParser extends Parser {
       case tt.ellipsis:
         return true
       case tt.name:
+      case tt._this:
         this.nextToken()
         switch (this.type) {
           case tt.colon:
           case tt.comma:
           case tt.question:
-          case tt.eq:
+            return true
+          case tt.parenR:
+            this.nextToken()
+            return this.type === tt.arrow
+          default:
+            return false
+        }
+      case tt.braceL:
+      case tt.bracketL:
+        this.type === tt.braceL
+          ? this.parseObj(/* isPattern */ true)
+          : this.parseBindingAtom()
+        switch (this.type) {
+          case tt.colon:
+          case tt.comma:
+          case tt.question:
             return true
           case tt.parenR:
             this.nextToken()
