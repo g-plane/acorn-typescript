@@ -1,8 +1,9 @@
 const acorn = require('acorn')
 const tt = acorn.tokTypes
 
-const tsTypeKeyword = {
+const tsPredefinedType = {
   any: 'TSAnyKeyword',
+  bigint: 'TSBigIntKeyword',
   boolean: 'TSBooleanKeyword',
   never: 'TSNeverKeyword',
   null: 'TSNullKeyword',
@@ -61,6 +62,14 @@ module.exports = Parser => class TSParser extends Parser {
       this.lastTokStart = lastTokStart
       this.context = context
     }
+  }
+
+  _isStartOfTypeParameters() {
+    return this.type === tt.relational && this.value.charCodeAt(0) === 60 // <
+  }
+
+  _isEndOfTypeParameters() {
+    return this.type === tt.relational && this.value.charCodeAt(0) === 62 // <
   }
 
   // Studied from Babel
@@ -142,14 +151,15 @@ module.exports = Parser => class TSParser extends Parser {
     return item
   }
 
-  parseTSTypeAnnotation() {
+  parseTSTypeAnnotation(eatColon = true) {
+    eatColon && this.expect(tt.colon)
     const node = this.startNodeAt(this.lastTokStart, this.lastTokStartLoc)
     this._parseTSTypeAnnotation(node)
     return this.finishNode(node, 'TSTypeAnnotation')
   }
 
   _parseTSType() {
-    let node = this._parseNonTSConditionalType()
+    let node = this._parseNonConditionalType()
     if (this.type === tt._extends) {
       node = this.parseTSConditionalType(node)
     }
@@ -160,12 +170,12 @@ module.exports = Parser => class TSParser extends Parser {
     node.typeAnnotation = this._parseTSType()
   }
 
-  _parseSimpleType() {
+  _parsePrimaryType() {
     let node
     switch (this.type) {
       case tt.name:
-        node = this.value in tsTypeKeyword
-          ? this.parseTSTypeKeyword()
+        node = this.value in tsPredefinedType
+          ? this.parseTSPredefinedType()
           : this.parseTSTypeReference()
         break
       case tt.braceL:
@@ -173,15 +183,10 @@ module.exports = Parser => class TSParser extends Parser {
         break
       case tt._void:
       case tt._null:
-        node = this.parseTSTypeKeyword()
+        node = this.parseTSPredefinedType()
         break
       case tt.parenL:
-        const recover = this.tsPreparePreview()
-        const isStartOfTSFunctionType = this._isStartOfTSFunctionType()
-        recover()
-        node = isStartOfTSFunctionType
-          ? this.parseTSFunctionType()
-          : this.parseTSParenthesizedType()
+        node = this.parseTSParenthesizedType()
         break
       case tt.bracketL:
         node = this.parseTSTupleType()
@@ -206,40 +211,35 @@ module.exports = Parser => class TSParser extends Parser {
     return node
   }
 
-  _parseNonTSConditionalType() {
+  _parseNonConditionalType() {
     let node
     switch (this.type) {
-      case tt._new:
-        node = this.parseTSConstructorType()
-        break
       case tt.name:
         switch (tsTypeOperator[this.value]) {
           case tsTypeOperator.infer:
             node = this.parseTSInferType()
             break
           default:
-            node = this._parseSimpleType()
+            node = this._parseTSUnionTypeOrIntersectionType()
         }
         break
-      default:
-        node = this._parseSimpleType()
+      case tt._new:
+        node = this.parseTSConstructorType()
         break
-    }
-    if (
-      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
-    ) {
-      const typeParameters = this.parseTSTypeParameterInstantiation()
-      node.typeParameters = typeParameters
-      node.end = typeParameters.end
-      if (this.options.locations) {
-        node.loc.end = typeParameters.loc.end
-      }
-    }
-    if (this.type === tt.bitwiseAND) {
-      node = this.parseTSIntersectionType(node)
-    }
-    if (this.type === tt.bitwiseOR) {
-      node = this.parseTSUnionType(node)
+      case tt.parenL:
+        const recover = this.tsPreparePreview()
+        const isStartOfTSFunctionType = this._isStartOfTSFunctionType()
+        recover()
+        node = isStartOfTSFunctionType
+          ? this.parseTSFunctionType()
+          : this.parseTSParenthesizedType()
+        break
+      case this._isStartOfTypeParameters(): /* < */
+        node = this.parseTSFunctionType()
+        break
+      default:
+        node = this._parseTSUnionTypeOrIntersectionType()
+        break
     }
     return node || this.unexpected()
   }
@@ -270,20 +270,18 @@ module.exports = Parser => class TSParser extends Parser {
       typeName = this.parseTSQualifiedName(typeName)
     }
     node.typeName = typeName
-    if (
-      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
-    ) {
+    if (this._isStartOfTypeParameters()) {
       node.typeParameters = this.parseTSTypeParameterInstantiation()
     }
     this.finishNode(node, 'TSTypeReference')
     return node
   }
 
-  parseTSTypeKeyword() {
+  parseTSPredefinedType() {
     const node = this.startNode()
     const keyword = this.value
     this.next()
-    this.finishNode(node, tsTypeKeyword[keyword])
+    this.finishNode(node, tsPredefinedType[keyword])
     return node
   }
 
@@ -389,10 +387,11 @@ module.exports = Parser => class TSParser extends Parser {
   parseTSFunctionType() {
     const node = this.startNode()
     const temp = Object.create(null)
+    node.typeParameters = this.parseMaybeTSTypeParameterDeclaration()
     this.parseFunctionParams(temp)
     node.parameters = temp.params
     this.expect(tt.arrow)
-    node.typeAnnotation = this.parseTSTypeAnnotation()
+    node.typeAnnotation = this.parseTSTypeAnnotation(false)
     return this.finishNode(node, 'TSFunctionType')
   }
 
@@ -411,7 +410,10 @@ module.exports = Parser => class TSParser extends Parser {
     const types = []
     first && types.push(first)
     while (this.eat(tt.bitwiseOR)) {
-      types.push(this._parseTSIntersectionTypeOrHigher())
+      types.push(this._parseTSIntersectionTypeOrPrimaryType())
+    }
+    if (types.length === 1) {
+      return first
     }
     node.types = types
     return this.finishNode(node, 'TSUnionType')
@@ -424,22 +426,27 @@ module.exports = Parser => class TSParser extends Parser {
     const types = []
     first && types.push(first)
     while (this.eat(tt.bitwiseAND)) {
-      types.push(this._parseSimpleType())
+      types.push(this._parsePrimaryType())
+    }
+    if (types.length === 1) {
+      return first
     }
     node.types = types
     return this.finishNode(node, 'TSIntersectionType')
   }
 
-  _parseTSIntersectionTypeOrHigher() {
-    const node = this._parseSimpleType()
+  _parseTSIntersectionTypeOrPrimaryType() {
+    this.eat(tt.bitwiseAND)
+    const node = this._parsePrimaryType()
     if (this.type === tt.bitwiseAND) {
       return this.parseTSIntersectionType(node)
     }
     return node
   }
 
-  _parseTSUnionTypeOrHigher() {
-    const node = this._parseTSIntersectionTypeOrHigher()
+  _parseTSUnionTypeOrIntersectionType() {
+    this.eat(tt.bitwiseOR)
+    const node = this._parseTSIntersectionTypeOrPrimaryType()
     if (this.type === tt.bitwiseOR) {
       return this.parseTSUnionType(node)
     }
@@ -450,11 +457,11 @@ module.exports = Parser => class TSParser extends Parser {
     const node = this.startNodeAtNode(checkType)
     node.checkType = checkType
     this.expect(tt._extends)
-    node.extendsType = this._parseNonTSConditionalType()
+    node.extendsType = this._parseNonConditionalType()
     this.expect(tt.question)
-    node.trueType = this._parseNonTSConditionalType()
+    node.trueType = this._parseNonConditionalType()
     this.expect(tt.colon)
-    node.falseType = this._parseNonTSConditionalType()
+    node.falseType = this._parseNonConditionalType()
     return this.finishNode(node, 'TSConditionalType')
   }
 
@@ -562,9 +569,7 @@ module.exports = Parser => class TSParser extends Parser {
       expr = this.parseTSQualifiedName(expr)
     }
     node.expr = expr
-    if (
-      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
-    ) {
+    if (this._isStartOfTypeParameters()) {
       const typeParameters = this.parseTSTypeParameterInstantiation()
       node.typeParameters = typeParameters
       node.end = typeParameters.end
@@ -593,18 +598,14 @@ module.exports = Parser => class TSParser extends Parser {
   }
 
   parseMaybeTSTypeParameterDeclaration() {
-    if (
-      this.type === tt.relational && this.value.charCodeAt(0) === 60 /* < */
-    ) {
+    if (this._isStartOfTypeParameters()) {
       const node = this.startNode()
       const params = []
       let first = true
       this.next()
       while (!this.eat(tt.relational)) {
         first ? (first = false) : this.expect(tt.comma)
-        if (
-          this.type === tt.relational && this.value.charCodeAt(0) === 62 /* > */
-        ) {
+        if (this._isEndOfTypeParameters()) {
           break
         }
         params.push(this.parseTSTypeParameter())
@@ -621,9 +622,7 @@ module.exports = Parser => class TSParser extends Parser {
     let first = true
     while (!this.eat(tt.relational)) {
       first ? (first = false) : this.expect(tt.comma)
-      if (
-        this.type === tt.relational && this.value.charCodeAt(0) === 62 /* > */
-      ) {
+      if (this._isEndOfTypeParameters()) {
         break
       }
       params.push(this._parseTSType())
@@ -677,6 +676,9 @@ module.exports = Parser => class TSParser extends Parser {
   parseTSMethodSignature(key) {
     const node = this.startNodeAtNode(key)
     node.key = key
+    if (this.eat(tt.question)) {
+      node.optional = true
+    }
     node.typeParameters = this.parseMaybeTSTypeParameterDeclaration()
     this.expect(tt.parenL)
     node.parameters = this.parseBindingList(
@@ -684,8 +686,8 @@ module.exports = Parser => class TSParser extends Parser {
       false,
       this.options.ecmaVersion >= 8
     )
-    if (this.eat(tt.colon)) {
-      this._parseTSTypeAnnotation(node)
+    if (this.type === tt.colon) {
+      node.typeAnnotation = this.parseTSTypeAnnotation()
     }
     this.eat(tt.comma) || this.eat(tt.semi)
     return this.finishNode(node, 'TSMethodSignature')
@@ -694,8 +696,11 @@ module.exports = Parser => class TSParser extends Parser {
   parseTSPropertySignature(key) {
     const node = this.startNodeAtNode(key)
     node.key = key
-    if (this.eat(tt.colon)) {
-      this._parseTSTypeAnnotation(node)
+    if (this.eat(tt.question)) {
+      node.optional = true
+    }
+    if (this.type === tt.colon) {
+      node.typeAnnotation = this.parseTSTypeAnnotation()
     }
     this.eat(tt.comma) || this.eat(tt.semi)
     return this.finishNode(node, 'TSPropertySignature')
