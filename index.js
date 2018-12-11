@@ -72,6 +72,10 @@ module.exports = Parser => class TSParser extends Parser {
     return this.type === tt.relational && this.value.charCodeAt(0) === 62 // <
   }
 
+  _hasPrecedingLineBreak() {
+    return acorn.lineBreak.test(this.input.slice(this.lastTokEnd, this.start))
+  }
+
   // Studied from Babel
   parseExpressionStatement(node, expr) {
     return expr.type === 'Identifier'
@@ -159,9 +163,9 @@ module.exports = Parser => class TSParser extends Parser {
   }
 
   _parseTSType() {
-    let node = this._parseNonConditionalType()
-    if (this.type === tt._extends) {
-      node = this.parseTSConditionalType(node)
+    const node = this._parseNonConditionalType()
+    if (this.type === tt._extends && !this._hasPrecedingLineBreak()) {
+      return this.parseTSConditionalType(node)
     }
     return node
   }
@@ -651,11 +655,7 @@ module.exports = Parser => class TSParser extends Parser {
               list.push(this.parseTSPropertySignature(key))
               break
             default:
-              if (
-                acorn.lineBreak.test(
-                  this.input.slice(this.lastTokEnd, this.start)
-                )
-              ) {
+              if (this._hasPrecedingLineBreak()) {
                 list.push(this.parseTSPropertySignature(key))
                 continue
               }
