@@ -129,6 +129,11 @@ module.exports = Parser => class TSParser extends Parser {
     return node
   }
 
+  parseFunctionParams(node) {
+    node.typeParameters = this.parseMaybeTSTypeParameterDeclaration()
+    return super.parseFunctionParams(node)
+  }
+
   parseFunctionBody(node, isArrowFunction) {
     // I know, return type doesn't belong to function body,
     // but this will be less hacky.
