@@ -29,6 +29,11 @@ const tsTypeOperator = {
   infer: 4
 }
 
+const tsExprMarkup = {
+  as: 1,
+  '!': 2
+}
+
 module.exports = Parser => class TSParser extends Parser {
   computeLocByOffset(offset) {
     // If `locations` option is off, do nothing for saving performance.
@@ -114,6 +119,16 @@ module.exports = Parser => class TSParser extends Parser {
     return super.parseMaybeDefault(startPos, startLoc, left)
   }
 
+  parseMaybeAssign(noIn, refDestructuringErrors, afterLeftParse) {
+    let node = super.parseMaybeAssign(
+      noIn,
+      refDestructuringErrors,
+      afterLeftParse
+    )
+    node = this._parseMaybeTSExpression(node)
+    return node
+  }
+
   parseFunctionBody(node, isArrowFunction) {
     // I know, return type doesn't belong to function body,
     // but this will be less hacky.
@@ -133,25 +148,13 @@ module.exports = Parser => class TSParser extends Parser {
       return expr
     }
 
-    while (this.type === tt.name && this.value === 'as') {
-      const node = this.startNodeAtNode(expr)
-      this.next()
-      node.expression = expr
-      this._parseTSTypeAnnotation(node)
-      expr = this.finishNode(node, 'TSAsExpression')
-    }
+    expr = this._parseMaybeTSExpression(expr)
     return expr
   }
 
   parseParenItem(item) {
     item = super.parseParenItem(item)
-    while (this.type === tt.name && this.value === 'as') {
-      const node = this.startNodeAtNode(item)
-      this.next()
-      node.expression = item
-      this._parseTSTypeAnnotation(node)
-      item = this.finishNode(node, 'TSAsExpression')
-    }
+    item = this._parseMaybeTSExpression(item)
     return item
   }
 
@@ -805,5 +808,46 @@ module.exports = Parser => class TSParser extends Parser {
     this.expect(tt._in)
     node.constraint = this._parseNonConditionalType()
     return this.finishNode(node, 'TSTypeParameter')
+  }
+
+  _parseMaybeTSExpression(node) {
+    if (
+      this.type === tt.prefix && tsExprMarkup[this.value] === tsExprMarkup['!']
+    ) {
+      node = this.parseTSNonNullExpression(node)
+    }
+    if (
+      this.type === tt.name && tsExprMarkup[this.value] === tsExprMarkup.as
+    ) {
+      node = this.parseTSAsExpression(node)
+    }
+    return node
+  }
+
+  parseTSAsExpression(expression) {
+    let node = expression
+    while (
+      this.type === tt.name && tsExprMarkup[this.value] === tsExprMarkup.as
+    ) {
+      const _node = this.startNodeAtNode(node)
+      this.next()
+      _node.expression = node
+      this._parseTSTypeAnnotation(_node)
+      node = this.finishNode(_node, 'TSAsExpression')
+    }
+    return node
+  }
+
+  parseTSNonNullExpression(expression) {
+    let node = expression
+    while (
+      this.type === tt.prefix && tsExprMarkup[this.value] === tsExprMarkup['!']
+    ) {
+      const _node = this.startNodeAtNode(node)
+      _node.expression = node
+      this.next()
+      node = this.finishNode(_node, 'TSNonNullExpression')
+    }
+    return node
   }
 }
